@@ -1,288 +1,24 @@
 from kivy.app import App
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.button import Button
-from kivy.graphics import Color, Rectangle, Line
-from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.boxlayout import BoxLayout
+from kivy.graphics import Color, Rectangle, Line
 import shogi
 
-
 # -------------------------
-# 駒ボタンクラス
+# グローバル
 # -------------------------
-class PieceButton(ButtonBehavior, Image):
-    def __init__(self, row, col, source=None, **kwargs):
-        super().__init__(**kwargs)
-        self.row = row
-        self.col = col
-        self.piece = None
-        self.highlighted = False
-        self.promotion_buttons = []
-
-        # サイズ固定でタッチイベント対応
-        self.size_hint = (None, None)
-        self.size = (50, 50)
-
-        if source:
-            self.source = source
-
-        # マス背景
-        with self.canvas.before:
-            if (row + col) % 2 == 0:
-                Color(0.95, 0.85, 0.7, 1)
-            else:
-                Color(0.85, 0.7, 0.5, 1)
-            self.rect = Rectangle(pos=self.pos, size=self.size)
-
-        self.highlight_line = None
-        self.bind(pos=self.update_rect, size=self.update_rect)
-
-    def update_rect(self, *args):
-        self.rect.pos = self.pos
-        self.rect.size = self.size
-        if self.highlight_line:
-            self.highlight_line.rectangle = (
-                self.pos[0],
-                self.pos[1],
-                self.size[0],
-                self.size[1],
-            )
-
-    def on_press(self):
-        global selectedPiece, piece_list, turn
-
-        col, row = self.col, self.row
-        self.piece = piece_list[row][col]
-
-        print(f"on_press: row={row}, col={col}, piece={self.piece}")
-
-        if self.piece == "." and selectedPiece is None:
-            return
-
-        if selectedPiece is None and (
-            (turn == 0 and self.piece.islower()) or (turn == 1 and self.piece.isupper())
-        ):
-            print("この手番では選択できません")
-            return
-
-        if self.highlighted:
-            self.remove_highlight()
-            selectedPiece = None
-        else:
-            for btn in app_ref.piece_buttons:
-                btn.remove_highlight()
-                btn.remove_promotion_buttons()
-
-            # 移動処理
-            if selectedPiece is not None:
-                departure, destination = selectedPiece, CoorsToUSI(col, row)
-                usi_normal = departure + destination
-                usi_promote = departure + destination + "+"
-
-                legal_usi = [m.usi() for m in board.legal_moves]
-                normal_legal = usi_normal in legal_usi
-                promote_legal = usi_promote in legal_usi
-
-                if normal_legal and promote_legal:
-                    self.show_promotion_buttons(departure, destination)
-                    return
-                elif promote_legal:
-                    move_to_play = shogi.Move.from_usi(usi_promote)
-                elif normal_legal:
-                    move_to_play = shogi.Move.from_usi(usi_normal)
-                else:
-                    print(f"反則手: {usi_normal}")
-                    selectedPiece = None
-                    return
-
-                handle_capture(move_to_play)
-                board.push(move_to_play)
-                update_board_and_buttons()
-                selectedPiece = None
-            else:
-                selectedPiece = CoorsToUSI(col, row)
-                self.add_highlight()
-
-    def show_promotion_buttons(self, departure, destination):
-        self.remove_promotion_buttons()
-        btn_size = self.size[0] / 2
-
-        btn_promote = Button(
-            text="成",
-            font_size=18,
-            font_name="static/NotoSansJP-Regular.ttf",
-            size_hint=(None, None),
-            size=(btn_size, btn_size * 0.7),
-            pos=(
-                self.pos[0] + self.size[0] - btn_size,
-                self.pos[1] + self.size[1] - btn_size * 0.7,
-            ),
-            background_color=(1, 0.6, 0.6, 1),
-        )
-        btn_normal = Button(
-            text="不成",
-            font_size=18,
-            font_name="static/NotoSansJP-Regular.ttf",
-            size_hint=(None, None),
-            size=(btn_size, btn_size * 0.7),
-            pos=(self.pos[0], self.pos[1] + self.size[1] - btn_size * 0.7),
-            background_color=(0.6, 0.8, 1, 1),
-        )
-
-        def promote_action(instance):
-            global selectedPiece
-            move = shogi.Move.from_usi(departure + destination + "+")
-            handle_capture(move)
-            board.push(move)
-            self.remove_promotion_buttons()
-            update_board_and_buttons()
-            selectedPiece = None
-            for btn in app_ref.piece_buttons:
-                btn.remove_highlight()
-
-        def normal_action(instance):
-            global selectedPiece
-            move = shogi.Move.from_usi(departure + destination)
-            handle_capture(move)
-            board.push(move)
-            self.remove_promotion_buttons()
-            update_board_and_buttons()
-            selectedPiece = None
-            for btn in app_ref.piece_buttons:
-                btn.remove_highlight()
-
-        btn_promote.bind(on_press=promote_action)
-        btn_normal.bind(on_press=normal_action)
-
-        app_ref.root.add_widget(btn_promote)
-        app_ref.root.add_widget(btn_normal)
-        self.promotion_buttons.extend([btn_promote, btn_normal])
-
-    def remove_promotion_buttons(self):
-        for b in self.promotion_buttons:
-            if b.parent:
-                b.parent.remove_widget(b)
-        self.promotion_buttons = []
-
-    def add_highlight(self):
-        self.highlighted = True
-        with self.canvas.after:
-            Color(1, 0, 0, 1)
-            self.highlight_line = Line(
-                rectangle=(self.pos[0], self.pos[1], self.size[0], self.size[1]),
-                width=3,
-            )
-
-    def remove_highlight(self):
-        if self.highlighted and self.highlight_line:
-            self.canvas.after.remove(self.highlight_line)
-            self.highlight_line = None
-        self.highlighted = False
-
-
-# -------------------------
-# (col,row) → USI
-# -------------------------
-def CoorsToUSI(col, row):
-    colToAlpha = {
-        0: "a",
-        1: "b",
-        2: "c",
-        3: "d",
-        4: "e",
-        5: "f",
-        6: "g",
-        7: "h",
-        8: "i",
-    }
-    return str(9 - col) + colToAlpha[row]
-
-
-# -------------------------
-# SFEN → 盤面リスト
-# -------------------------
-def sfen_to_piece_list(board):
-    sfen = board.sfen()
-    piece_list = []
-    board_part = sfen.split()[0] if " " in sfen else sfen
-    for row in board_part.split("/"):
-        row_list = []
-        i = 0
-        while i < len(row):
-            char = row[i]
-            if char.isdigit():
-                row_list.extend(["."] * int(char))
-                i += 1
-            elif char == "+":
-                i += 1
-                row_list.append("+" + row[i])
-                i += 1
-            else:
-                row_list.append(char)
-                i += 1
-        while len(row_list) < 9:
-            row_list.append(".")
-        piece_list.append(row_list)
-    return piece_list
-
-
-# -------------------------
-# 盤面更新
-# -------------------------
-def update_board_and_buttons():
-    global turn, piece_list
-    piece_list[:] = sfen_to_piece_list(board)
-    for btn in app_ref.piece_buttons:
-        piece = piece_list[btn.row][btn.col]
-        btn.source = "" if piece == "." else piece_images[piece]
-    turn = 0 if board.turn == shogi.BLACK else 1
-    update_holding_area()
-
-
-# -------------------------
-# 持ち駒管理
-# -------------------------
-holding_pieces = {0: [], 1: []}
-
-
-def handle_capture(move):
-    """
-    move: shogi.Move
-    board.push(move) の前に呼ぶ
-    """
-    # 移動先の駒を取得
-    captured_piece = board.piece_at(move.to_square)
-    if captured_piece:
-        # 現手番と逆が持ち駒に追加
-        holder = 0 if board.turn == shogi.BLACK else 1
-        piece_symbol = captured_piece.symbol()  # 文字列
-        piece_symbol = piece_symbol.replace("+", "")  # 成駒を元に戻す
-        piece_symbol = piece_symbol.upper() if holder == 0 else piece_symbol.lower()
-        holding_pieces[holder].append(piece_symbol)
-
-
-def update_holding_area():
-    app_ref.top_captures.clear_widgets()
-    app_ref.bottom_captures.clear_widgets()
-    for p in holding_pieces[0]:
-        img = Image(source=piece_images[p], size_hint=(None, None), size=(30, 30))
-        app_ref.top_captures.add_widget(img)
-    for p in holding_pieces[1]:
-        img = Image(source=piece_images[p], size_hint=(None, None), size=(30, 30))
-        app_ref.bottom_captures.add_widget(img)
-
-
-# -------------------------
-# 初期設定
-# -------------------------
-board = shogi.Board()
-piece_list = sfen_to_piece_list(board)
-selectedPiece = None
+selectedPiece = None  # 盤上の駒選択
+selectedHand = None  # 持ち駒選択
+holding_pieces = {0: [], 1: []}  # 0=先手,1=後手
 turn = 0
 
+# -------------------------
+# 駒画像
+# -------------------------
 piece_images = {
     "P": "static/image/black_pawn.png",
     "L": "static/image/black_lance.png",
@@ -316,57 +52,388 @@ piece_images = {
 
 
 # -------------------------
+# USI / SFEN
+# -------------------------
+def CoorsToUSI(col, row):
+    colToAlpha = {
+        0: "a",
+        1: "b",
+        2: "c",
+        3: "d",
+        4: "e",
+        5: "f",
+        6: "g",
+        7: "h",
+        8: "i",
+    }
+    return str(9 - col) + colToAlpha[row]
+
+
+def sfen_to_piece_list(board):
+    sfen = board.sfen()
+    piece_list = []
+    board_part = sfen.split()[0]
+    for row in board_part.split("/"):
+        row_list = []
+        i = 0
+        while i < len(row):
+            c = row[i]
+            if c.isdigit():
+                row_list.extend(["."] * int(c))
+                i += 1
+            elif c == "+":
+                i += 1
+                row_list.append("+" + row[i])
+                i += 1
+            else:
+                row_list.append(c)
+                i += 1
+        while len(row_list) < 9:
+            row_list.append(".")
+        piece_list.append(row_list)
+    return piece_list
+
+
+# -------------------------
+# ボード初期化
+# -------------------------
+board = shogi.Board()
+piece_list = sfen_to_piece_list(board)
+
+
+# -------------------------
+# 持ち駒ボタン
+# -------------------------
+class HoldingPieceButton(ButtonBehavior, Image):
+    def __init__(self, piece, owner, **kwargs):
+        super().__init__(**kwargs)
+        self.piece = piece
+        self.owner = owner
+        self.size_hint = (None, 1)
+        self.width = 50
+        self.bind(on_press=self.on_press_piece)
+
+    def on_press_piece(self, instance):
+        global selectedHand, selectedPiece, turn
+        if (turn == 0 and self.owner == 0) or (turn == 1 and self.owner == 1):
+            selectedHand = self.piece
+            selectedPiece = None
+            print(f"[DEBUG] 持ち駒 {self.piece} を選択")
+
+
+# -------------------------
+# 盤上駒ボタン
+# -------------------------
+class PieceButton(ButtonBehavior, Image):
+    def __init__(self, row, col, source=None, **kwargs):
+        super().__init__(**kwargs)
+        self.row = row
+        self.col = col
+        self.piece = None
+        self.highlighted = False
+        self.promotion_buttons = []
+
+        self.size_hint = (None, None)
+        self.size = (50, 50)
+        if source:
+            self.source = source
+
+        with self.canvas.before:
+            if (row + col) % 2 == 0:
+                Color(0.95, 0.85, 0.7, 1)
+            else:
+                Color(0.85, 0.7, 0.5, 1)
+            self.rect = Rectangle(pos=self.pos, size=self.size)
+
+        self.highlight_line = None
+        self.bind(pos=self.update_rect, size=self.update_rect)
+
+    def update_rect(self, *args):
+        self.rect.pos = self.pos
+        self.rect.size = self.size
+        if self.highlight_line:
+            self.highlight_line.rectangle = (
+                self.pos[0],
+                self.pos[1],
+                self.size[0],
+                self.size[1],
+            )
+
+    def on_press(self):
+        global selectedPiece, selectedHand, turn
+        col, row = self.col, self.row
+        self.piece = piece_list[row][col]
+
+        # --- 持ち駒を打つ ---
+        if selectedHand and self.piece == ".":
+            usi_move = selectedHand.lower() if turn == 1 else selectedHand.upper()
+            usi = usi_move + "*" + CoorsToUSI(col, row)
+            legal_usi = [m.usi() for m in board.legal_moves]
+            if usi in legal_usi:
+                move = shogi.Move.from_usi(usi)
+                board.push(move)
+                holder = 0 if turn == 0 else 1
+                holding_pieces[holder].remove(selectedHand)
+                selectedHand = None
+                update_board_and_buttons()
+                print(f"[DEBUG] 持ち駒打ち: {move.usi()}")
+                print(f"[DEBUG] 現在のSFEN: {board.sfen()}")
+            else:
+                print("[DEBUG] 反則打ち")
+            return
+
+        # --- 盤上駒選択／移動 ---
+        if self.piece == "." and selectedPiece is None:
+            return
+
+        if selectedPiece is None and (
+            (turn == 0 and self.piece.islower()) or (turn == 1 and self.piece.isupper())
+        ):
+            print("[DEBUG] 選択できない駒です")
+            return
+
+        if self.highlighted:
+            self.remove_highlight()
+            selectedPiece = None
+        else:
+            for btn in app_ref.piece_buttons:
+                btn.remove_highlight()
+                btn.remove_promotion_buttons()
+
+            if selectedPiece is not None:
+                departure, destination = selectedPiece, CoorsToUSI(col, row)
+                usi_normal = departure + destination
+                usi_promote = departure + destination + "+"
+
+                legal_usi = [m.usi() for m in board.legal_moves]
+                normal_legal = usi_normal in legal_usi
+                promote_legal = usi_promote in legal_usi
+
+                if normal_legal and promote_legal:
+                    self.show_promotion_buttons(departure, destination)
+                    return
+                elif promote_legal:
+                    move_to_play = shogi.Move.from_usi(usi_promote)
+                elif normal_legal:
+                    move_to_play = shogi.Move.from_usi(usi_normal)
+                else:
+                    print(f"[DEBUG] 反則手: {usi_normal}")
+                    selectedPiece = None
+                    return
+
+                handle_capture(move_to_play)
+                board.push(move_to_play)
+                update_board_and_buttons()
+                print(f"[DEBUG] 駒移動: {move_to_play.usi()}")
+                print(f"[DEBUG] 現在のSFEN: {board.sfen()}")
+                selectedPiece = None
+            else:
+                selectedPiece = CoorsToUSI(col, row)
+                self.add_highlight()
+
+    # --- 成ボタン ---
+    def show_promotion_buttons(self, departure, destination):
+        self.remove_promotion_buttons()
+        btn_size = self.size[0] / 2
+        win_x, win_y = self.to_window(self.x, self.y)
+        btn_promote = Button(
+            text="成",
+            font_size=18,
+            font_name="static/NotoSansJP-Regular.ttf",
+            size_hint=(None, None),
+            size=(btn_size, btn_size * 0.7),
+            pos=(win_x + self.width - btn_size, win_y + self.height - btn_size * 0.7),
+            background_color=(1, 0.6, 0.6, 1),
+        )
+        btn_normal = Button(
+            text="不成",
+            font_size=18,
+            font_name="static/NotoSansJP-Regular.ttf",
+            size_hint=(None, None),
+            size=(btn_size, btn_size * 0.7),
+            pos=(win_x, win_y + self.height - btn_size * 0.7),
+            background_color=(0.6, 0.8, 1, 1),
+        )
+
+        def promote_action(instance):
+            global selectedPiece
+            move = shogi.Move.from_usi(departure + destination + "+")
+            handle_capture(move)
+            board.push(move)
+            update_board_and_buttons()
+            print(f"[DEBUG] 成り移動: {move.usi()}")
+            print(f"[DEBUG] 現在のSFEN: {board.sfen()}")
+            selectedPiece = None
+            for btn in app_ref.piece_buttons:
+                btn.remove_highlight()
+
+        def normal_action(instance):
+            global selectedPiece
+            move = shogi.Move.from_usi(departure + destination)
+            handle_capture(move)
+            board.push(move)
+            update_board_and_buttons()
+            print(f"[DEBUG] 不成移動: {move.usi()}")
+            print(f"[DEBUG] 現在のSFEN: {board.sfen()}")
+            selectedPiece = None
+            for btn in app_ref.piece_buttons:
+                btn.remove_highlight()
+
+        btn_promote.bind(on_press=promote_action)
+        btn_normal.bind(on_press=normal_action)
+        app_ref.promotion_layer.add_widget(btn_promote)
+        app_ref.promotion_layer.add_widget(btn_normal)
+        self.promotion_buttons.extend([btn_promote, btn_normal])
+
+    def remove_promotion_buttons(self):
+        for b in self.promotion_buttons:
+            if b.parent:
+                b.parent.remove_widget(b)
+        self.promotion_buttons = []
+
+    def add_highlight(self):
+        self.highlighted = True
+        with self.canvas.after:
+            Color(1, 0, 0, 1)
+            self.highlight_line = Line(
+                rectangle=(self.pos[0], self.pos[1], self.size[0], self.size[1]),
+                width=3,
+            )
+
+    def remove_highlight(self):
+        if self.highlighted and self.highlight_line:
+            self.canvas.after.remove(self.highlight_line)
+            self.highlight_line = None
+        self.highlighted = False
+
+
+# -------------------------
+# キャプチャ処理
+# -------------------------
+def handle_capture(move):
+    captured_piece = board.piece_at(move.to_square)
+    if captured_piece:
+        holder = 0 if board.turn == shogi.BLACK else 1
+        piece_symbol = captured_piece.symbol().replace("+", "")
+        piece_symbol = piece_symbol.upper() if holder == 0 else piece_symbol.lower()
+        holding_pieces[holder].append(piece_symbol)
+
+
+def update_holding_area():
+    app_ref.top_captures.clear_widgets()
+    app_ref.bottom_captures.clear_widgets()
+    top_height = app_ref.top_captures.height
+    bottom_height = app_ref.bottom_captures.height
+
+    for p in holding_pieces[1]:
+        btn = HoldingPieceButton(piece=p, owner=1)
+        btn.source = piece_images[p]
+        btn.size_hint = (None, None)
+        btn.height = top_height * 0.9
+        btn.width = btn.height
+        app_ref.top_captures.add_widget(btn)
+
+    for p in holding_pieces[0]:
+        btn = HoldingPieceButton(piece=p, owner=0)
+        btn.source = piece_images[p]
+        btn.size_hint = (None, None)
+        btn.height = bottom_height * 0.9
+        btn.width = btn.height
+        app_ref.bottom_captures.add_widget(btn)
+
+
+# -------------------------
+# 盤更新
+# -------------------------
+def update_board_and_buttons():
+    global turn, piece_list
+    piece_list[:] = sfen_to_piece_list(board)
+    for btn in app_ref.piece_buttons:
+        piece = piece_list[btn.row][btn.col]
+        btn.source = "" if piece == "." else piece_images[piece]
+    turn = 0 if board.turn == shogi.BLACK else 1
+    update_holding_area()
+
+
+# -------------------------
 # アプリ本体
 # -------------------------
 class ShogiApp(App):
     def build(self):
         global app_ref
         app_ref = self
-        self.root = FloatLayout()
 
-        # 上側持ち駒表示エリア
-        self.top_captures = BoxLayout(
-            size_hint=(1, 0.1), pos_hint={"top": 1}, spacing=2, padding=5
-        )
-        # 下側持ち駒表示エリア
-        self.bottom_captures = BoxLayout(
-            size_hint=(1, 0.1), pos_hint={"y": 0}, spacing=2, padding=5
-        )
-        self.root.add_widget(self.top_captures)
-        self.root.add_widget(self.bottom_captures)
+        root = FloatLayout()
 
-        # 盤面
-        self.board_container = AnchorLayout(
-            anchor_x="center", anchor_y="center", size_hint=(1, 0.8)
+        # 上持ち駒
+        app_ref.top_captures = BoxLayout(
+            size_hint=(1, 0.12), pos_hint={"top": 1}, spacing=5, padding=[5, 0, 5, 0]
         )
-        self.board_layout = GridLayout(
+        with app_ref.top_captures.canvas.before:
+            Color(0.9, 0.9, 0.9, 1)
+            app_ref.top_bg = Rectangle(
+                pos=app_ref.top_captures.pos, size=app_ref.top_captures.size
+            )
+        app_ref.top_captures.bind(pos=self.update_top_bg, size=self.update_top_bg)
+        root.add_widget(app_ref.top_captures)
+
+        # 盤 + 成ボタンレイヤ
+        app_ref.promotion_layer = FloatLayout(size_hint=(1, 0.76), pos_hint={"y": 0.12})
+
+        # 盤
+        app_ref.board_layout = GridLayout(
             cols=9, rows=9, spacing=2, size_hint=(None, None)
         )
-        self.piece_buttons = []
-
+        app_ref.piece_buttons = []
         for row in range(9):
             for col in range(9):
                 piece = piece_list[row][col]
                 btn = PieceButton(
                     row, col, source="" if piece == "." else piece_images[piece]
                 )
-                self.board_layout.add_widget(btn)
-                self.piece_buttons.append(btn)
+                app_ref.board_layout.add_widget(btn)
+                app_ref.piece_buttons.append(btn)
+        app_ref.promotion_layer.add_widget(app_ref.board_layout)
+        root.add_widget(app_ref.promotion_layer)
 
-        self.board_container.add_widget(self.board_layout)
-        self.root.add_widget(self.board_container)
+        # 下持ち駒
+        app_ref.bottom_captures = BoxLayout(
+            size_hint=(1, 0.12), pos_hint={"y": 0}, spacing=5, padding=[5, 0, 5, 0]
+        )
+        with app_ref.bottom_captures.canvas.before:
+            Color(0.9, 0.9, 0.9, 1)
+            app_ref.bottom_bg = Rectangle(
+                pos=app_ref.bottom_captures.pos, size=app_ref.bottom_captures.size
+            )
+        app_ref.bottom_captures.bind(
+            pos=self.update_bottom_bg, size=self.update_bottom_bg
+        )
+        root.add_widget(app_ref.bottom_captures)
 
-        self.root.bind(size=self.update_board)
-        self.update_board(self.root, self.root.size)
-        update_holding_area()
-        return self.root
+        update_board_and_buttons()
+        root.bind(size=self.update_board)
+        self.update_board(root, root.size)
+
+        return root
+
+    def update_top_bg(self, *args):
+        app_ref.top_bg.pos = app_ref.top_captures.pos
+        app_ref.top_bg.size = app_ref.top_captures.size
+
+    def update_bottom_bg(self, *args):
+        app_ref.bottom_bg.pos = app_ref.bottom_captures.pos
+        app_ref.bottom_bg.size = app_ref.bottom_captures.size
 
     def update_board(self, instance, size):
-        min_side = min(size[0], size[1] * 0.8)
-        self.board_layout.size = (min_side, min_side)
-        btn_size = self.board_layout.width / 9
-        for btn in self.piece_buttons:
+        available_height = size[1] * 0.76
+        board_size = min(size[0], available_height)
+        app_ref.board_layout.size = (board_size, board_size)
+        btn_size = board_size / 9
+        for btn in app_ref.piece_buttons:
             btn.size = (btn_size, btn_size)
+        x_offset = (size[0] - board_size) / 2
+        y_offset = (available_height - board_size) / 2 + size[1] * 0.12
+        app_ref.board_layout.pos = (x_offset, y_offset)
 
 
 # -------------------------
