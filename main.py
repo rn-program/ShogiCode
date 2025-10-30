@@ -1,10 +1,12 @@
 from kivy.app import App
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.image import Image
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
 from kivy.graphics import Color, Rectangle, Line
 import shogi
 
@@ -73,6 +75,7 @@ def sfen_to_piece_list(board):
     sfen = board.sfen()
     piece_list = []
     board_part = sfen.split()[0]
+
     for row in board_part.split("/"):
         row_list = []
         i = 0
@@ -88,9 +91,11 @@ def sfen_to_piece_list(board):
             else:
                 row_list.append(c)
                 i += 1
+
         while len(row_list) < 9:
             row_list.append(".")
         piece_list.append(row_list)
+
     return piece_list
 
 
@@ -102,23 +107,47 @@ piece_list = sfen_to_piece_list(board)
 
 
 # -------------------------
-# 持ち駒ボタン
+# 持ち駒ボタン（枚数表示対応）
 # -------------------------
-class HoldingPieceButton(ButtonBehavior, Image):
-    def __init__(self, piece, owner, **kwargs):
+class HoldingPieceButton(RelativeLayout):
+    def __init__(self, piece, owner, count=1, **kwargs):
         super().__init__(**kwargs)
         self.piece = piece
         self.owner = owner
-        self.size_hint = (None, 1)
-        self.width = 50
-        self.bind(on_press=self.on_press_piece)
+        self.size_hint = (None, None)
+        self.width = self.height = 50
 
-    def on_press_piece(self, instance):
-        global selectedHand, selectedPiece, turn
-        if (turn == 0 and self.owner == 0) or (turn == 1 and self.owner == 1):
-            selectedHand = self.piece
-            selectedPiece = None
-            print(f"[DEBUG] 持ち駒 {self.piece} を選択")
+        # 駒画像
+        self.img = Image(source=piece_images[piece], size_hint=(1, 1))
+        self.add_widget(self.img)
+
+        # 枚数ラベル
+        self.count_label = Label(
+            text=str(count) if count > 1 else "",
+            size_hint=(None, None),
+            size=(20, 20),
+            pos=(self.width - 20, self.height - 20),
+            color=(1, 1, 1, 1),
+            bold=True,
+        )
+        self.add_widget(self.count_label)
+        self.bind(size=self.update_label_pos)
+
+    def update_label_pos(self, *args):
+        self.count_label.pos = (
+            self.width - self.count_label.width,
+            self.height - self.count_label.height,
+        )
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            global selectedHand, selectedPiece, turn
+            if (turn == 0 and self.owner == 0) or (turn == 1 and self.owner == 1):
+                selectedHand = self.piece
+                selectedPiece = None
+                print(f"[DEBUG] 持ち駒 {self.piece} を選択")
+                return True
+        return super().on_touch_down(touch)
 
 
 # -------------------------
@@ -132,9 +161,9 @@ class PieceButton(ButtonBehavior, Image):
         self.piece = None
         self.highlighted = False
         self.promotion_buttons = []
-
         self.size_hint = (None, None)
         self.size = (50, 50)
+
         if source:
             self.source = source
 
@@ -144,8 +173,7 @@ class PieceButton(ButtonBehavior, Image):
             else:
                 Color(0.85, 0.7, 0.5, 1)
             self.rect = Rectangle(pos=self.pos, size=self.size)
-
-        self.highlight_line = None
+            self.highlight_line = None
         self.bind(pos=self.update_rect, size=self.update_rect)
 
     def update_rect(self, *args):
@@ -166,9 +194,10 @@ class PieceButton(ButtonBehavior, Image):
 
         # --- 持ち駒を打つ ---
         if selectedHand and self.piece == ".":
-            usi_move = selectedHand.lower() if turn == 1 else selectedHand.upper()
+            usi_move = selectedHand.upper()
             usi = usi_move + "*" + CoorsToUSI(col, row)
             legal_usi = [m.usi() for m in board.legal_moves]
+            print(usi, legal_usi)
             if usi in legal_usi:
                 move = shogi.Move.from_usi(usi)
                 board.push(move)
@@ -204,7 +233,6 @@ class PieceButton(ButtonBehavior, Image):
                 departure, destination = selectedPiece, CoorsToUSI(col, row)
                 usi_normal = departure + destination
                 usi_promote = departure + destination + "+"
-
                 legal_usi = [m.usi() for m in board.legal_moves]
                 normal_legal = usi_normal in legal_usi
                 promote_legal = usi_promote in legal_usi
@@ -236,6 +264,7 @@ class PieceButton(ButtonBehavior, Image):
         self.remove_promotion_buttons()
         btn_size = self.size[0] / 2
         win_x, win_y = self.to_window(self.x, self.y)
+
         btn_promote = Button(
             text="成",
             font_size=18,
@@ -260,6 +289,7 @@ class PieceButton(ButtonBehavior, Image):
             move = shogi.Move.from_usi(departure + destination + "+")
             handle_capture(move)
             board.push(move)
+            self.remove_promotion_buttons()
             update_board_and_buttons()
             print(f"[DEBUG] 成り移動: {move.usi()}")
             print(f"[DEBUG] 現在のSFEN: {board.sfen()}")
@@ -272,6 +302,7 @@ class PieceButton(ButtonBehavior, Image):
             move = shogi.Move.from_usi(departure + destination)
             handle_capture(move)
             board.push(move)
+            self.remove_promotion_buttons()
             update_board_and_buttons()
             print(f"[DEBUG] 不成移動: {move.usi()}")
             print(f"[DEBUG] 現在のSFEN: {board.sfen()}")
@@ -304,7 +335,7 @@ class PieceButton(ButtonBehavior, Image):
         if self.highlighted and self.highlight_line:
             self.canvas.after.remove(self.highlight_line)
             self.highlight_line = None
-        self.highlighted = False
+            self.highlighted = False
 
 
 # -------------------------
@@ -319,27 +350,30 @@ def handle_capture(move):
         holding_pieces[holder].append(piece_symbol)
 
 
+# -------------------------
+# 持ち駒更新（枚数表示対応）
+# -------------------------
 def update_holding_area():
     app_ref.top_captures.clear_widgets()
     app_ref.bottom_captures.clear_widgets()
+
     top_height = app_ref.top_captures.height
     bottom_height = app_ref.bottom_captures.height
 
-    for p in holding_pieces[1]:
-        btn = HoldingPieceButton(piece=p, owner=1)
-        btn.source = piece_images[p]
-        btn.size_hint = (None, None)
-        btn.height = top_height * 0.9
-        btn.width = btn.height
-        app_ref.top_captures.add_widget(btn)
-
-    for p in holding_pieces[0]:
-        btn = HoldingPieceButton(piece=p, owner=0)
-        btn.source = piece_images[p]
-        btn.size_hint = (None, None)
-        btn.height = bottom_height * 0.9
-        btn.width = btn.height
-        app_ref.bottom_captures.add_widget(btn)
+    for owner in [1, 0]:
+        holder_pieces = holding_pieces[owner]
+        counts = {}
+        for p in holder_pieces:
+            counts[p] = counts.get(p, 0) + 1
+        for p, c in counts.items():
+            btn = HoldingPieceButton(piece=p, owner=owner, count=c)
+            btn.height = btn.width = (
+                top_height * 0.9 if owner == 1 else bottom_height * 0.9
+            )
+            if owner == 1:
+                app_ref.top_captures.add_widget(btn)
+            else:
+                app_ref.bottom_captures.add_widget(btn)
 
 
 # -------------------------
@@ -362,12 +396,14 @@ class ShogiApp(App):
     def build(self):
         global app_ref
         app_ref = self
-
         root = FloatLayout()
 
         # 上持ち駒
         app_ref.top_captures = BoxLayout(
-            size_hint=(1, 0.12), pos_hint={"top": 1}, spacing=5, padding=[5, 0, 5, 0]
+            size_hint=(1, 0.12),
+            pos_hint={"top": 1},
+            spacing=5,
+            padding=[5, 0, 5, 0],
         )
         with app_ref.top_captures.canvas.before:
             Color(0.9, 0.9, 0.9, 1)
@@ -393,12 +429,16 @@ class ShogiApp(App):
                 )
                 app_ref.board_layout.add_widget(btn)
                 app_ref.piece_buttons.append(btn)
+
         app_ref.promotion_layer.add_widget(app_ref.board_layout)
         root.add_widget(app_ref.promotion_layer)
 
         # 下持ち駒
         app_ref.bottom_captures = BoxLayout(
-            size_hint=(1, 0.12), pos_hint={"y": 0}, spacing=5, padding=[5, 0, 5, 0]
+            size_hint=(1, 0.12),
+            pos_hint={"y": 0},
+            spacing=5,
+            padding=[5, 0, 5, 0],
         )
         with app_ref.bottom_captures.canvas.before:
             Color(0.9, 0.9, 0.9, 1)
@@ -413,7 +453,6 @@ class ShogiApp(App):
         update_board_and_buttons()
         root.bind(size=self.update_board)
         self.update_board(root, root.size)
-
         return root
 
     def update_top_bg(self, *args):
@@ -434,6 +473,11 @@ class ShogiApp(App):
         x_offset = (size[0] - board_size) / 2
         y_offset = (available_height - board_size) / 2 + size[1] * 0.12
         app_ref.board_layout.pos = (x_offset, y_offset)
+
+        app_ref.top_captures.width = board_size
+        app_ref.bottom_captures.width = board_size
+        app_ref.top_captures.pos = (x_offset, size[1] - app_ref.top_captures.height)
+        app_ref.bottom_captures.pos = (x_offset, 0)
 
 
 # -------------------------
