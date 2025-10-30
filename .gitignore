@@ -1,6 +1,9 @@
 # 開発時メモ
 note.txt
 
+# 実行テスト.pyファイル
+test.py
+
 # Python仮想環境を無視
 .venv/
 
