@@ -4,9 +4,16 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.image import Image
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.graphics import Color, Rectangle, Line
+import ctypes
 import shogi
 
-# 駒画像ボタン（押せる画像）
+# --- ライブラリ読み込み ---
+lib = ctypes.CDLL("./ShogiAI.dll")
+
+lib.add.argtypes = (ctypes.c_int, ctypes.c_int)
+lib.add.restype = ctypes.c_int
+
+# 駒ボタン
 class PieceButton(ButtonBehavior, Image):
     def __init__(self, row, col, source=None, **kwargs):
         super().__init__(**kwargs)
@@ -62,7 +69,6 @@ class PieceButton(ButtonBehavior, Image):
             # この駒をハイライト
             self.add_highlight()
             selectedPiece = CoorsToUSI(col, row)
-
         print(f"選択されたマス: {selectedPiece}")
 
     def add_highlight(self):
@@ -206,4 +212,7 @@ class ShogiApp(App):
 
 
 if __name__ == "__main__":
-    ShogiApp().run()
+    try:
+        ShogiApp().run()
+    except KeyboardInterrupt:
+        print("アプリを終了しました。")
