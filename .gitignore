@@ -1,8 +1,11 @@
 # 開発時メモ
 note.txt
 
-# 実行テスト.pyファイル
+# pythonファイル
 test.py
+setup.py
+ShogiAI.pyx
+ShogiAI.c
 
 # Python仮想環境を無視
 .venv/
@@ -11,7 +14,6 @@ test.py
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
 build/
 dist/
 *.egg-info/
