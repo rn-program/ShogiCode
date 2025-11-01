@@ -8,7 +8,7 @@ from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.graphics import Color, Rectangle, Line
-import shogi
+import shogi, ShogiAI
 
 # -------------------------
 # グローバル
@@ -360,20 +360,29 @@ def update_holding_area():
     top_height = app_ref.top_captures.height
     bottom_height = app_ref.bottom_captures.height
 
+    # 並び順（歩→香→桂→銀→金→角→飛）
+    display_order = ["P", "L", "N", "S", "G", "B", "R"]
+
     for owner in [1, 0]:
         holder_pieces = holding_pieces[owner]
         counts = {}
         for p in holder_pieces:
             counts[p] = counts.get(p, 0) + 1
-        for p, c in counts.items():
-            btn = HoldingPieceButton(piece=p, owner=owner, count=c)
-            btn.height = btn.width = (
-                top_height * 0.9 if owner == 1 else bottom_height * 0.9
-            )
-            if owner == 1:
-                app_ref.top_captures.add_widget(btn)
-            else:
-                app_ref.bottom_captures.add_widget(btn)
+
+        # 並び順に従ってソートして表示
+        for base_piece in display_order:
+            # ownerが1（後手）の場合は小文字で扱う
+            piece = base_piece.lower() if owner == 1 else base_piece
+            if piece in counts:
+                c = counts[piece]
+                btn = HoldingPieceButton(piece=piece, owner=owner, count=c)
+                btn.height = btn.width = (
+                    top_height * 0.9 if owner == 1 else bottom_height * 0.9
+                )
+                if owner == 1:
+                    app_ref.top_captures.add_widget(btn)
+                else:
+                    app_ref.bottom_captures.add_widget(btn)
 
 
 # -------------------------
@@ -474,10 +483,11 @@ class ShogiApp(App):
         y_offset = (available_height - board_size) / 2 + size[1] * 0.12
         app_ref.board_layout.pos = (x_offset, y_offset)
 
-        app_ref.top_captures.width = board_size
-        app_ref.bottom_captures.width = board_size
-        app_ref.top_captures.pos = (x_offset, size[1] - app_ref.top_captures.height)
-        app_ref.bottom_captures.pos = (x_offset, 0)
+        # 駒台幅を画面幅いっぱい
+        app_ref.top_captures.width = size[0]
+        app_ref.bottom_captures.width = size[0]
+        app_ref.top_captures.pos = (0, size[1] - app_ref.top_captures.height)
+        app_ref.bottom_captures.pos = (0, 0)
 
 
 # -------------------------

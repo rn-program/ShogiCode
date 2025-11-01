@@ -4,8 +4,13 @@ note.txt
 # pythonファイル
 test.py
 setup.py
+ShogiAI.py
 ShogiAI.pyx
 ShogiAI.c
+copy_main.py
+
+# pythonのテストコード
+.python/
 
 # Python仮想環境を無視
 .venv/
