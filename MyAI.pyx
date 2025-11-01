@@ -1,8 +1,8 @@
 import random
+import shogi
 
-
-# boardからsfenに変換する関数
-def sfen_to_piece_list(board):
+# boardからpiece_listに変換する関数
+def board_to_piece_list(board):
     sfen = board.sfen()
     piece_list = []
     board_part = sfen.split()[0]
@@ -61,18 +61,32 @@ class piece_position:
         return total_position_value
 
 
-# 玉の堅さを評価するクラス
+""" 玉の堅さを評価するクラス
+class king_safety:
+    def __init__(self, position_value_dict, weight):
+        self.position_value_dict = position_value_dict
+        self.weight = weight
+"""
 
-
-# 評価関数
-def evaluate_board(board):
-    pass
-
-
+# 将棋AI(評価関数)クラス
+class ShogiAI(piece_value, piece_position):
+    def evaluate_board(self, piece_list):
+        pass
+        
 # 探索部
-def search_move(sfen, depth):
-    pass  # 再起呼び出しでdepth回for文を呼び出し、α・β探索法を用いる
+def explore_moves(board, depth):
+    if depth == 0:
+        # evaluate_board(board.sfen)
+        print(board.sfen())  # 例: 現在の盤面を表示
+        return
 
+    for move in list(board.legal_moves):
+        board.push(move)       # 手を指す
+        explore_moves(board, depth - 1)  # 次の深さを探索 (処理が終わるまで盤面は戻されない)
+        board.pop()            # 手を戻す（必ずpopすることが重要）
+        
+board = shogi.Board()
+explore_moves(board, 5)
 
 # 指し手指示
 def get_best_move(board):
@@ -81,4 +95,3 @@ def get_best_move(board):
         return random.choice(legal_moves_list)
     else:
         print("投了")
-        return

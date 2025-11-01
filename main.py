@@ -390,11 +390,15 @@ def update_holding_area():
 # -------------------------
 def update_board_and_buttons():
     global turn, piece_list
+    turn = 0 if board.turn == shogi.BLACK else 1
+    if turn:  # 後手の時のAI処理
+        usi_move = ShogiAI.get_best_move(board)
+        board.push(usi_move)
+        turn = 0 if board.turn == shogi.BLACK else 1
     piece_list[:] = sfen_to_piece_list(board)
     for btn in app_ref.piece_buttons:
         piece = piece_list[btn.row][btn.col]
         btn.source = "" if piece == "." else piece_images[piece]
-    turn = 0 if board.turn == shogi.BLACK else 1
     update_holding_area()
 
 
