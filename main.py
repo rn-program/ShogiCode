@@ -10,6 +10,7 @@ from kivy.uix.label import Label
 from kivy.graphics import Color, Rectangle, Line
 from kivy.clock import Clock
 from threading import Thread
+import sys
 import shogi, MyAI
 
 # -------------------------
@@ -19,6 +20,7 @@ selectedPiece = None  # 盤上の駒選択
 selectedHand = None  # 持ち駒選択
 holding_pieces = {0: [], 1: []}  # 0=先手,1=後手
 turn = 0
+ai_turn = int(input("AIの手番を選択: "))
 
 # -------------------------
 # 駒画像
@@ -386,11 +388,15 @@ def update_holding_area():
 
 # -------------------------
 # AIを別スレッドで実行
+# AIが先手の時、おそらく、AI側の最悪手を指している
+# AIが後手の時、legal_moves_listの先頭の手を指している
 # -------------------------
 def ai_move():
     """AIの手を非同期で指す処理"""
     print("[DEBUG] AI思考中...")
-    usi_move = MyAI.get_best_move(board, depth=5)
+    usi_move = MyAI.get_best_move(board, depth=3)
+    if usi_move == None:
+        sys.exit()
     board.push(usi_move)
     print(f"[DEBUG] AI指し手: {usi_move.usi()}")
     Clock.schedule_once(lambda dt: update_board_and_buttons(), 0)
@@ -411,7 +417,7 @@ def update_board_and_buttons():
     update_holding_area()
 
     # 後手(AI)の番なら非同期で思考
-    if turn == 1:
+    if turn == ai_turn:
         Thread(target=ai_move).start()
 
 
