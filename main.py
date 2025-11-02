@@ -8,7 +8,9 @@ from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.graphics import Color, Rectangle, Line
-import shogi, ShogiAI
+from kivy.clock import Clock
+from threading import Thread
+import shogi, MyAI
 
 # -------------------------
 # グローバル
@@ -71,7 +73,7 @@ def CoorsToUSI(col, row):
     return str(9 - col) + colToAlpha[row]
 
 
-def sfen_to_piece_list(board):
+def board_to_piece_list(board):
     sfen = board.sfen()
     piece_list = []
     board_part = sfen.split()[0]
@@ -103,7 +105,7 @@ def sfen_to_piece_list(board):
 # ボード初期化
 # -------------------------
 board = shogi.Board()
-piece_list = sfen_to_piece_list(board)
+piece_list = board_to_piece_list(board)
 
 
 # -------------------------
@@ -351,7 +353,7 @@ def handle_capture(move):
 
 
 # -------------------------
-# 持ち駒更新（枚数表示対応）
+# 持ち駒更新
 # -------------------------
 def update_holding_area():
     app_ref.top_captures.clear_widgets()
@@ -360,7 +362,6 @@ def update_holding_area():
     top_height = app_ref.top_captures.height
     bottom_height = app_ref.bottom_captures.height
 
-    # 並び順（歩→香→桂→銀→金→角→飛）
     display_order = ["P", "L", "N", "S", "G", "B", "R"]
 
     for owner in [1, 0]:
@@ -369,9 +370,7 @@ def update_holding_area():
         for p in holder_pieces:
             counts[p] = counts.get(p, 0) + 1
 
-        # 並び順に従ってソートして表示
         for base_piece in display_order:
-            # ownerが1（後手）の場合は小文字で扱う
             piece = base_piece.lower() if owner == 1 else base_piece
             if piece in counts:
                 c = counts[piece]
@@ -386,20 +385,34 @@ def update_holding_area():
 
 
 # -------------------------
+# AIを別スレッドで実行
+# -------------------------
+def ai_move():
+    """AIの手を非同期で指す処理"""
+    print("[DEBUG] AI思考中...")
+    usi_move = MyAI.get_best_move(board, depth=5)
+    board.push(usi_move)
+    print(f"[DEBUG] AI指し手: {usi_move.usi()}")
+    Clock.schedule_once(lambda dt: update_board_and_buttons(), 0)
+
+
+# -------------------------
 # 盤更新
 # -------------------------
 def update_board_and_buttons():
     global turn, piece_list
     turn = 0 if board.turn == shogi.BLACK else 1
-    if turn:  # 後手の時のAI処理
-        usi_move = ShogiAI.get_best_move(board)
-        board.push(usi_move)
-        turn = 0 if board.turn == shogi.BLACK else 1
-    piece_list[:] = sfen_to_piece_list(board)
+    piece_list[:] = board_to_piece_list(board)
+
     for btn in app_ref.piece_buttons:
         piece = piece_list[btn.row][btn.col]
         btn.source = "" if piece == "." else piece_images[piece]
+
     update_holding_area()
+
+    # 後手(AI)の番なら非同期で思考
+    if turn == 1:
+        Thread(target=ai_move).start()
 
 
 # -------------------------
@@ -494,8 +507,5 @@ class ShogiApp(App):
         app_ref.bottom_captures.pos = (0, 0)
 
 
-# -------------------------
-# 起動
-# -------------------------
 if __name__ == "__main__":
     ShogiApp().run()

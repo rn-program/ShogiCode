@@ -3,10 +3,11 @@ note.txt
 
 # pythonファイル
 test.py
+test1.py
 setup.py
-ShogiAI.py
-ShogiAI.pyx
-ShogiAI.c
+MyAI.py
+MyAI.pyx
+MyAI.c
 copy_main.py
 
 # pythonのテストコード

@@ -1,97 +1,125 @@
-import random
 import shogi
 
-# boardからpiece_listに変換する関数
+
+# --- 評価用クラス ---
+class ShogiAI:
+    def __init__(self, piece_value_dict):
+        self.piece_value_dict = piece_value_dict
+
+    def evaluate(self, piece_list):
+        """駒の合計点で盤面を評価"""
+        total = 0
+        for piece in piece_list:
+            total += self.piece_value_dict.get(piece, 0)
+        return total
+
+
+# --- 盤面を駒リストに変換 ---
 def board_to_piece_list(board):
-    sfen = board.sfen()
+    """盤上の駒をリストに変換"""
     piece_list = []
-    board_part = sfen.split()[0]
-
-    for row in board_part.split("/"):
-        row_list = []
-        i = 0
-        while i < len(row):
-            c = row[i]
-            if c.isdigit():
-                row_list.extend(["."] * int(c))
-                i += 1
-            elif c == "+":
-                i += 1
-                row_list.append("+" + row[i])
-                i += 1
-            else:
-                row_list.append(c)
-                i += 1
-
-        while len(row_list) < 9:
-            row_list.append(".")
-        piece_list.append(row_list)
-
+    for square in shogi.SQUARES:
+        piece = board.piece_at(square)
+        if piece:
+            piece_list.append(piece.symbol())
     return piece_list
 
 
-# 駒の損得を計算するクラス
-class piece_value:
-    def __init__(self, piece_value_dict, weight):
-        """piece_value_dict = {
-            0: {}, 先手
-            1: {}  後手
-        }
-        """
-        self.piece_value_dict = piece_value_dict
-        self.weight = weight
+# --- αβ探索（最良手付き） ---
+def explore_moves(
+    board, depth, alpha=-float("inf"), beta=float("inf"), maximizing=True
+):
+    """
+    αβ探索（再帰）
+    戻り値: (評価値, 最良手)
+    """
+    # --- 評価辞書 ---
+    piece_value_dict = {
+        # 先手（大文字） → 正の値
+        "P": 1,
+        "L": 5,
+        "N": 5,
+        "S": 7,
+        "G": 8,
+        "B": 10,
+        "R": 12,
+        "+P": 2,
+        "+L": 6,
+        "+N": 6,
+        "+S": 9,
+        "+B": 15,
+        "+R": 18,
+        # 後手（小文字） → 負の値
+        "p": -1,
+        "l": -5,
+        "n": -5,
+        "s": -7,
+        "g": -8,
+        "b": -10,
+        "r": -12,
+        "+p": -2,
+        "+l": -6,
+        "+n": -6,
+        "+s": -9,
+        "+b": -15,
+        "+r": -18,
+    }
 
-    def evaluate(self, piece_list):
-        total_piece_value = 0
-        for piece in piece_list:
-            total_piece_value += self.piece_value_dict.get(piece, 0)
-        return total_piece_value
+    # --- 終端条件 ---
+    if depth == 0 or board.is_game_over():
+        ai = ShogiAI(piece_value_dict)
+        piece_list = board_to_piece_list(board)
+        return ai.evaluate(piece_list), None  # 手はなし
 
+    best_move = None
 
-# 駒の位置評価するクラス
-class piece_position:
-    def __init__(self, position_value_dict, weight):
-        self.position_value_dict = position_value_dict
-        self.weight = weight
+    # --- 先手（最大化） ---
+    if maximizing:
+        value = -float("inf")
+        for move in board.legal_moves:
+            board.push(move)
+            child_value, _ = explore_moves(board, depth - 1, alpha, beta, False)
+            board.pop()
 
-    def evaluate(self, piece_list):
-        total_position_value = 0
-        for i in range(81):
-            total_position_value += self.position_value_dict[piece_list[i]][i]
-        return total_position_value
+            if child_value > value:
+                value = child_value
+                best_move = move
 
+            alpha = max(alpha, value)
+            if beta <= alpha:  # βカット
+                break
 
-""" 玉の堅さを評価するクラス
-class king_safety:
-    def __init__(self, position_value_dict, weight):
-        self.position_value_dict = position_value_dict
-        self.weight = weight
-"""
+        return value, best_move
 
-# 将棋AI(評価関数)クラス
-class ShogiAI(piece_value, piece_position):
-    def evaluate_board(self, piece_list):
-        pass
-        
-# 探索部
-def explore_moves(board, depth):
-    if depth == 0:
-        # evaluate_board(board.sfen)
-        print(board.sfen())  # 例: 現在の盤面を表示
-        return
-
-    for move in list(board.legal_moves):
-        board.push(move)       # 手を指す
-        explore_moves(board, depth - 1)  # 次の深さを探索 (処理が終わるまで盤面は戻されない)
-        board.pop()            # 手を戻す（必ずpopすることが重要）
-        
-board = shogi.Board()
-explore_moves(board, 5)
-
-# 指し手指示
-def get_best_move(board):
-    legal_moves_list = list(board.legal_moves)
-    if not legal_moves_list == []:
-        return random.choice(legal_moves_list)
+    # --- 後手（最小化） ---
     else:
-        print("投了")
+        value = float("inf")
+        for move in board.legal_moves:
+            board.push(move)
+            child_value, _ = explore_moves(board, depth - 1, alpha, beta, True)
+            board.pop()
+
+            if child_value < value:
+                value = child_value
+                best_move = move
+
+            beta = min(beta, value)
+            if beta <= alpha:  # αカット
+                break
+
+        return value, best_move
+
+def get_best_move(board, depth):
+    return explore_moves(board, depth)[1]
+
+# --- 使用例 ---
+if __name__ == "__main__":
+    board = shogi.Board()
+    depth = 5
+    value, best_move = explore_moves(board, depth)
+
+    print(f"探索結果の評価値: {value}")
+    if best_move:
+        print(f"AIが選んだ最良手: {(best_move.usi)}")
+    else:
+        print("指せる手がありません。")
