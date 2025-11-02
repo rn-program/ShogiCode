@@ -1,5 +1,1 @@
-fn main() {
-    let x = 5;
-    println!("x={}", x);
-    println!("Hello, world!");
-}
+// 練習として素数判定機を作成する
