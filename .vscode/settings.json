@@ -1,0 +1,9 @@
+{
+    "rust-analyzer.checkOnSave": true,
+    "rust-analyzer.cargo.autoreload": true,
+    "rust-analyzer.procMacro.enable": true,
+    "editor.formatOnSave": true,
+    "editor.inlayHints.enabled": "on",
+    "files.encoding": "utf8",
+    "terminal.integrated.defaultProfile.windows": "PowerShell"
+}
