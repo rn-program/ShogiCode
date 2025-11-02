@@ -10,6 +10,9 @@ MyAI.pyx
 MyAI.c
 copy_main.py
 
+# pythonAI
+MyAI/
+
 # pythonのテストコード
 .python/
 
