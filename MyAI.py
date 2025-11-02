@@ -25,39 +25,55 @@ def board_to_piece_list(board):
     return piece_list
 
 
-# --- 
+# --- 持ち駒をリストに変換 ---
+def board_to_hand_list(board):
+    """先手・後手の持ち駒をまとめてリストに変換"""
+    hand_list = []
+
+    # 先手の持ち駒
+    for p in board.pieces_in_hand[shogi.BLACK]:
+        hand_list.append(p.symbol())
+    # 後手の持ち駒
+    for p in board.pieces_in_hand[shogi.WHITE]:
+        hand_list.append(p.symbol().lower())  # 後手は小文字
+
+    return hand_list
+
+
+# --- 盤面＋持ち駒を合計評価する関数 ---
+def evaluate_board(board, piece_value_dict):
+    """盤上駒＋持ち駒で評価値を返す"""
+    ai = ShogiAI(piece_value_dict)
+    pieces = board_to_piece_list(board)
+    pieces += board_to_hand_list(board)  # 持ち駒も含める
+    return ai.evaluate(pieces)
+
 
 # --- 静止探索（quiescence search） ---
 def quiescence(board, alpha, beta, piece_value_dict, depth=0):
-    ai = ShogiAI(piece_value_dict)
-    stand_pat = ai.evaluate(board_to_piece_list(board))
+    stand_pat = evaluate_board(board, piece_value_dict)
 
     indent = "    " * depth
     print(f"{indent}Q探索 深さ{depth}: 評価={stand_pat}, α={alpha}, β={beta}")
 
     # βカット
     if stand_pat >= beta:
-        print(f"{indent}βカット！（stand_pat={stand_pat} ≥ β={beta}）")
         return beta
     if alpha < stand_pat:
         alpha = stand_pat
 
     # 駒取りの手のみ延長探索
     for move in board.legal_moves:
-        # 修正: python-shogi では is_capture() はない → to_square に駒があるかで判定
         if board.piece_at(move.to_square) is None:
             continue
 
         board.push(move)
-        print(f"{indent}  捕獲手 {move.usi()} を読む")
         score = -quiescence(board, -beta, -alpha, piece_value_dict, depth + 1)
         board.pop()
 
         if score >= beta:
-            print(f"{indent}  βカット！（score={score} ≥ β={beta}）")
             return beta
         if score > alpha:
-            print(f"{indent}  α更新 {alpha} → {score}")
             alpha = score
 
     return alpha
@@ -67,17 +83,10 @@ def quiescence(board, alpha, beta, piece_value_dict, depth=0):
 def explore_moves(
     board, depth, alpha=-float("inf"), beta=float("inf"), maximizing=True, ply=0
 ):
-    """
-    αβ探索（再帰）＋静止探索
-    戻り値: (評価値, 最良手)
-    """
-
     indent = "    " * ply
-    print(f"{indent}探索開始 深さ={depth}, 手番={'先手' if maximizing else '後手'}")
 
-    # --- 評価辞書 ---
+    # 評価辞書
     piece_value_dict = {
-        # 先手（大文字） → 正の値
         "P": 1,
         "L": 5,
         "N": 5,
@@ -91,7 +100,6 @@ def explore_moves(
         "+S": 9,
         "+B": 15,
         "+R": 18,
-        # 後手（小文字） → 負の値
         "p": -1,
         "l": -5,
         "n": -5,
@@ -107,54 +115,43 @@ def explore_moves(
         "+r": -18,
     }
 
-    # --- 終端条件 ---
     if depth == 0 or board.is_game_over():
         value = quiescence(board, alpha, beta, piece_value_dict)
-        print(f"{indent}終端：静止探索結果 = {value}")
         return value, None
 
     best_move = None
 
-    # --- 先手（最大化） ---
     if maximizing:
         value = -float("inf")
         for move in board.legal_moves:
             board.push(move)
-            print(f"{indent}  ▶ 先手手 {move.usi()} を読む")
             child_value, _ = explore_moves(
                 board, depth - 1, alpha, beta, False, ply + 1
             )
             board.pop()
 
             if child_value > value:
-                print(f"{indent}  ☆ 最良手更新 {move.usi()} 評価 {child_value}")
                 value = child_value
                 best_move = move
 
             alpha = max(alpha, value)
             if beta <= alpha:
-                print(f"{indent}  βカット！（β={beta} ≤ α={alpha}）")
                 break
 
         return value, best_move
-
-    # --- 後手（最小化） ---
     else:
         value = float("inf")
         for move in board.legal_moves:
             board.push(move)
-            print(f"{indent}  ▶ 後手着手 {move.usi()} を読む")
             child_value, _ = explore_moves(board, depth - 1, alpha, beta, True, ply + 1)
             board.pop()
 
             if child_value < value:
-                print(f"{indent}  ☆ 最良手更新 {move.usi()} 評価 {child_value}")
                 value = child_value
                 best_move = move
 
             beta = min(beta, value)
             if beta <= alpha:
-                print(f"{indent}  αカット！（β={beta} ≤ α={alpha}）")
                 break
 
         return value, best_move

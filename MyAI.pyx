@@ -1,175 +1,143 @@
+# MyAI.pyx
+# cython: language_level=3
+
 import shogi
 
-
 # --- 評価用クラス ---
-class ShogiAI:
-    def __init__(self, piece_value_dict):
+cdef class ShogiAI:
+    cdef dict piece_value_dict
+
+    def __init__(self, dict piece_value_dict):
         self.piece_value_dict = piece_value_dict
 
-    def evaluate(self, piece_list):
+    cpdef int evaluate(self, list piece_list):
         """駒の合計点で盤面を評価"""
-        total = 0
+        cdef int total = 0
+        cdef str piece
         for piece in piece_list:
             total += self.piece_value_dict.get(piece, 0)
         return total
 
-
-# --- 盤面を駒リストに変換 ---
-def board_to_piece_list(board):
-    """盤上の駒をリストに変換"""
-    piece_list = []
+# --- 盤面を駒リストに変換 (持ち駒は含まない) ---
+cpdef list board_to_piece_list(object board):
+    cdef list piece_list = []
+    cdef int square
+    cdef object piece
     for square in shogi.SQUARES:
         piece = board.piece_at(square)
-        if piece:
+        if piece is not None:
             piece_list.append(piece.symbol())
     return piece_list
 
+# --- 持ち駒をリストに変換 ---
+cpdef list board_to_hand_list(object board):
+    """先手・後手の持ち駒をまとめてリストに変換"""
+    cdef list hand_list = []
+    cdef int piece_type, count, i
+
+    # 先手
+    for piece_type, count in board.pieces_in_hand[shogi.BLACK].items():
+        for i in range(count):
+            hand_list.append(shogi.PIECE_SYMBOLS[piece_type])
+
+    # 後手
+    for piece_type, count in board.pieces_in_hand[shogi.WHITE].items():
+        for i in range(count):
+            hand_list.append(shogi.PIECE_SYMBOLS[piece_type].lower())
+
+    return hand_list
+
+# --- 盤面＋持ち駒を合計評価 ---
+cpdef int evaluate_board(object board, dict piece_value_dict):
+    cdef ShogiAI ai = ShogiAI(piece_value_dict)
+    cdef list pieces = board_to_piece_list(board)
+    pieces += board_to_hand_list(board)
+    return ai.evaluate(pieces)
 
 # --- 静止探索（quiescence search） ---
-def quiescence(board, alpha, beta, piece_value_dict, depth=0):
-    ai = ShogiAI(piece_value_dict)
-    stand_pat = ai.evaluate(board_to_piece_list(board))
-
+cpdef int quiescence(object board, int alpha, int beta, dict piece_value_dict, int depth=0):
+    cdef int stand_pat = evaluate_board(board, piece_value_dict)
+    cdef object move
+    cdef int score
     indent = "    " * depth
-    print(f"{indent}Q探索 深さ{depth}: 評価={stand_pat}, α={alpha}, β={beta}")
 
     # βカット
     if stand_pat >= beta:
-        print(f"{indent}βカット！（stand_pat={stand_pat} ≥ β={beta}）")
         return beta
     if alpha < stand_pat:
         alpha = stand_pat
 
-    # 駒取りの手のみ延長探索
+    # 駒取りの手のみ延長
     for move in board.legal_moves:
-        # 修正: python-shogi では is_capture() はない → to_square に駒があるかで判定
         if board.piece_at(move.to_square) is None:
             continue
-
         board.push(move)
-        print(f"{indent}  捕獲手 {move.usi()} を読む")
         score = -quiescence(board, -beta, -alpha, piece_value_dict, depth + 1)
         board.pop()
 
         if score >= beta:
-            print(f"{indent}  βカット！（score={score} ≥ β={beta}）")
             return beta
         if score > alpha:
-            print(f"{indent}  α更新 {alpha} → {score}")
             alpha = score
 
     return alpha
 
-
 # --- αβ探索（最良手付き） ---
-def explore_moves(
-    board, depth, alpha=-float("inf"), beta=float("inf"), maximizing=True, ply=0
-):
-    """
-    αβ探索（再帰）＋静止探索
-    戻り値: (評価値, 最良手)
-    """
-
-    indent = "    " * ply
-    print(f"{indent}探索開始 深さ={depth}, 手番={'先手' if maximizing else '後手'}")
-
-    # --- 評価辞書 ---
-    piece_value_dict = {
-        # 先手（大文字） → 正の値
-        "P": 1,
-        "L": 5,
-        "N": 5,
-        "S": 7,
-        "G": 8,
-        "B": 10,
-        "R": 12,
-        "+P": 2,
-        "+L": 6,
-        "+N": 6,
-        "+S": 9,
-        "+B": 15,
-        "+R": 18,
-        # 後手（小文字） → 負の値
-        "p": -1,
-        "l": -5,
-        "n": -5,
-        "s": -7,
-        "g": -8,
-        "b": -10,
-        "r": -12,
-        "+p": -2,
-        "+l": -6,
-        "+n": -6,
-        "+s": -9,
-        "+b": -15,
-        "+r": -18,
+cpdef tuple explore_moves(object board,
+                          int depth,
+                          double alpha=-1e9,
+                          double beta=1e9,
+                          bint maximizing=True,
+                          int ply=0):
+    cdef dict piece_value_dict = {
+        "P": 1, "L": 5, "N": 5, "S": 7, "G": 8,
+        "B": 10, "R": 12, "+P": 2, "+L": 6, "+N": 6,
+        "+S": 9, "+B": 15, "+R": 18,
+        "p": -1, "l": -5, "n": -5, "s": -7, "g": -8,
+        "b": -10, "r": -12, "+p": -2, "+l": -6,
+        "+n": -6, "+s": -9, "+b": -15, "+r": -18
     }
 
-    # --- 終端条件 ---
+    cdef double value
+    cdef object best_move = None
+    cdef object move
+    cdef tuple child_result
+
     if depth == 0 or board.is_game_over():
-        value = quiescence(board, alpha, beta, piece_value_dict)
-        print(f"{indent}終端：静止探索結果 = {value}")
-        return value, None
+        return quiescence(board, int(alpha), int(beta), piece_value_dict), None
 
-    best_move = None
-
-    # --- 先手（最大化） ---
     if maximizing:
-        value = -float("inf")
+        value = -1e9
         for move in board.legal_moves:
             board.push(move)
-            print(f"{indent}  ▶ 先手手 {move.usi()} を読む")
-            child_value, _ = explore_moves(
-                board, depth - 1, alpha, beta, False, ply + 1
-            )
+            child_result = explore_moves(board, depth - 1, alpha, beta, False, ply + 1)
             board.pop()
 
-            if child_value > value:
-                print(f"{indent}  ☆ 最良手更新 {move.usi()} 評価 {child_value}")
-                value = child_value
+            if child_result[0] > value:
+                value = child_result[0]
                 best_move = move
 
             alpha = max(alpha, value)
             if beta <= alpha:
-                print(f"{indent}  βカット！（β={beta} ≤ α={alpha}）")
                 break
-
         return value, best_move
-
-    # --- 後手（最小化） ---
     else:
-        value = float("inf")
+        value = 1e9
         for move in board.legal_moves:
             board.push(move)
-            print(f"{indent}  ▶ 後手着手 {move.usi()} を読む")
-            child_value, _ = explore_moves(board, depth - 1, alpha, beta, True, ply + 1)
+            child_result = explore_moves(board, depth - 1, alpha, beta, True, ply + 1)
             board.pop()
 
-            if child_value < value:
-                print(f"{indent}  ☆ 最良手更新 {move.usi()} 評価 {child_value}")
-                value = child_value
+            if child_result[0] < value:
+                value = child_result[0]
                 best_move = move
 
             beta = min(beta, value)
             if beta <= alpha:
-                print(f"{indent}  αカット！（β={beta} ≤ α={alpha}）")
                 break
-
         return value, best_move
 
-
-def get_best_move(board, depth):
+# --- 最良手取得 ---
+cpdef object get_best_move(object board, int depth):
     return explore_moves(board, depth)[1]
 
-
-# --- 使用例 ---
-if __name__ == "__main__":
-    board = shogi.Board()
-    depth = 3
-    value, best_move = explore_moves(board, depth)
-
-    print(f"\n探索結果の評価値: {value}")
-    if best_move:
-        print(f"AIが選んだ最良手: {best_move.usi()}")
-    else:
-        print("指せる手がありません。")
